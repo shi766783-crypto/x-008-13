@@ -1,7 +1,8 @@
 import { storage } from '../../core/storage.js'
-import { uid, todayStr } from '../../core/utils.js'
+import { uid, todayStr, money } from '../../core/utils.js'
 import { STORAGE_KEYS, TRANSACTION_TYPES } from '../../core/constants.js'
-import { loadAccounts, saveAccounts } from './accountController.js'
+import { loadAccounts, saveAccounts, accountBalance, canWithdraw } from './accountController.js'
+import { reduceGoalSaving } from './savingsGoalController.js'
 
 export const emptyTransactionForm = () => ({
   type: TRANSACTION_TYPES.EXPENSE,
@@ -45,8 +46,8 @@ export function normalizeTransaction(form) {
 
 function applyTransfer(accounts, fromAccountId, toAccountId, amount) {
   return accounts.map((a) => {
-    if (a.id === fromAccountId) return { ...a, balance: a.balance - amount }
-    if (a.id === toAccountId) return { ...a, balance: a.balance + amount }
+    if (a.id === fromAccountId) return { ...a, balance: accountBalance(a) - amount }
+    if (a.id === toAccountId) return { ...a, balance: accountBalance(a) + amount }
     return a
   })
 }
@@ -54,7 +55,7 @@ function applyTransfer(accounts, fromAccountId, toAccountId, amount) {
 function reconcileAll() {
   const accounts = loadAccounts()
   const transactions = loadTransactions()
-  const balances = new Map(accounts.map((a) => [a.id, a.initialBalance]))
+  const balances = new Map(accounts.map((a) => [a.id, Number(a.initialBalance) || 0]))
   for (const t of transactions) {
     if (t.type === TRANSACTION_TYPES.INCOME) balances.set(t.accountId, (balances.get(t.accountId) || 0) + t.amount)
     else if (t.type === TRANSACTION_TYPES.EXPENSE) balances.set(t.accountId, (balances.get(t.accountId) || 0) - t.amount)
@@ -68,26 +69,43 @@ function reconcileAll() {
 
 export function addTransaction(form) {
   const accounts = loadAccounts()
-  if (!form.accountId || !form.amount) return null
-  if (form.type === TRANSACTION_TYPES.TRANSFER && form.accountId === form.toAccountId) return null
-  const transaction = normalizeTransaction(form)
+  const amount = Number(form.amount)
+  if (!form.accountId || !amount) return { ok: false, message: '请填写账户与金额' }
+  if (!(amount > 0)) return { ok: false, message: '金额必须大于 0' }
+  const account = accounts.find((a) => a.id === form.accountId)
+  if (!account) return { ok: false, message: '账户不存在' }
+  if (form.type === TRANSACTION_TYPES.TRANSFER) {
+    if (form.accountId === form.toAccountId) return { ok: false, message: '转账账户不能相同' }
+    const toAccount = accounts.find((a) => a.id === form.toAccountId)
+    if (!toAccount) return { ok: false, message: '转入账户不存在' }
+    if (!canWithdraw(account, amount)) {
+      return { ok: false, message: `转出账户「${account.name}」余额不足（当前 ¥${money(accountBalance(account))}）` }
+    }
+  } else if (form.type === TRANSACTION_TYPES.EXPENSE && !canWithdraw(account, amount)) {
+    return { ok: false, message: `账户「${account.name}」余额不足（当前 ¥${money(accountBalance(account))}），无法记这笔支出` }
+  }
+  const transaction = normalizeTransaction({ ...form, amount })
   const nextAccounts = form.type === TRANSACTION_TYPES.TRANSFER
     ? applyTransfer(accounts, form.accountId, form.toAccountId, transaction.amount)
     : accounts.map((a) =>
         a.id === form.accountId
-          ? { ...a, balance: a.balance + (form.type === TRANSACTION_TYPES.INCOME ? transaction.amount : -transaction.amount) }
+          ? { ...a, balance: accountBalance(a) + (form.type === TRANSACTION_TYPES.INCOME ? transaction.amount : -transaction.amount) }
           : a
       )
   saveAccounts(nextAccounts)
   saveTransactions([...loadTransactions(), transaction])
-  return transaction
+  return { ok: true, transaction }
 }
 
 export function removeTransaction(id, confirmFn = window.confirm) {
   const transaction = loadTransactions().find((t) => t.id === id)
   if (!transaction) return false
-  if (!confirmFn('确认删除这条记账记录吗？账户余额将自动回滚。')) return false
+  const tip = transaction.goalId ? '确认删除这条记账记录吗？账户余额与储蓄目标进度将自动回滚。' : '确认删除这条记账记录吗？账户余额将自动回滚。'
+  if (!confirmFn(tip)) return false
   saveTransactions(loadTransactions().filter((t) => t.id !== id))
+  if (transaction.type === TRANSACTION_TYPES.EXPENSE && transaction.goalId) {
+    reduceGoalSaving(transaction.goalId, transaction.amount)
+  }
   reconcileAll()
   return true
 }

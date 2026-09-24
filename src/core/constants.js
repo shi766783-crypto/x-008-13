@@ -14,7 +14,9 @@ export const ACCOUNT_TYPES = [
 
 export const INCOME_CATEGORIES = ['工资', '兼职', '红包', '理财']
 
-export const EXPENSE_CATEGORIES = ['餐饮', '交通', '购物', '住房', '医疗', '教育', '娱乐', '人情', '其他']
+export const EXPENSE_CATEGORIES = ['餐饮', '交通', '购物', '住房', '医疗', '教育', '娱乐', '人情', '储蓄', '其他']
+
+export const SAVINGS_CATEGORY = '储蓄'
 
 export const BUDGET_WARN_RATIO = 0.8
 

@@ -16,6 +16,15 @@ export function saveAccounts(accounts) {
   storage.setJSON(STORAGE_KEYS.accounts, accounts)
 }
 
+export function accountBalance(account) {
+  if (!account) return 0
+  return Number.isFinite(Number(account.balance)) ? Number(account.balance) : Number(account.initialBalance) || 0
+}
+
+export function canWithdraw(account, amount) {
+  return accountBalance(account) - Number(amount) >= 0
+}
+
 export function normalizeAccount(form) {
   return {
     id: uid(),

@@ -171,12 +171,15 @@ const openCreate = () => {
 }
 
 const submit = () => {
-  if (!form.accountId || !form.amount) return
-  if (form.type === 'transfer' && form.accountId === form.toAccountId) {
-    alert('转账账户不能相同')
+  if (!form.accountId || !form.amount) {
+    alert('请填写账户与金额')
     return
   }
-  txApi.addTransaction(form)
+  const result = txApi.addTransaction(form)
+  if (!result.ok) {
+    alert(result.message || '记账失败')
+    return
+  }
   refreshKeys('transactions', 'accounts')
   modalOpen.value = false
   controllersApi.achievement.updateAchievements()

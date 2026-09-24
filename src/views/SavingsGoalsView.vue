@@ -36,9 +36,17 @@
         </div>
         <div class="advice done" v-else>🎉 目标已达成！</div>
         <form class="add-save" @submit.prevent="addSaving(g)">
-          <input v-model.number="g.depositInput" :placeholder="`存入金额，当前 ¥${money(g.savedAmount)}`" type="number" min="0.01" step="0.01" required />
+          <select v-model="g.depositAccountId" :aria-label="'扣款账户'">
+            <option value="" disabled>选择扣款账户</option>
+            <option v-for="a in store.accounts" :key="a.id" :value="a.id">
+              {{ a.name }}（¥{{ money(accountApi.accountBalance(a)) }}）
+            </option>
+          </select>
+          <input v-model.number="g.depositInput" :placeholder="`存入金额，当前 ¥${money(g.savedAmount)}`" type="number" min="0.01" step="0.01" required @input="clearError(g.id)" />
           <button class="btn btn-primary" type="submit">存入</button>
         </form>
+        <p class="save-error" v-if="depositErrors[g.id]">{{ depositErrors[g.id] }}</p>
+        <p class="save-tip" v-if="store.accounts.length === 0">还没有可用账户，请先到「我的账户」创建账户后再存入。</p>
       </div>
     </div>
 
@@ -82,10 +90,11 @@ import ProgressRing from '../components/ProgressRing.vue'
 import Modal from '../components/Modal.vue'
 
 const store = useStore()
-const { savingsGoal: goalApi } = controllersApi
+const { savingsGoal: goalApi, account: accountApi } = controllersApi
 
 const modalOpen = ref(false)
 const form = reactive(goalApi.emptyGoalForm())
+const depositErrors = reactive({})
 
 const goals = computed(() =>
   store.goals.map((g) => {
@@ -98,6 +107,7 @@ const goals = computed(() =>
       remainingAmount,
       percent,
       depositInput: 0,
+      depositAccountId: store.accounts[0]?.id || '',
       status: percent >= 100 ? 'done' : 'active',
       monthlyAmount: leftDays > 0 ? remainingAmount / Math.max(1, Math.round(leftDays / 30)) : 0,
       weeklyAmount: leftDays > 0 ? remainingAmount / Math.max(1, Math.round(leftDays / 7)) : 0,
@@ -120,13 +130,29 @@ const submit = () => {
   refreshKeys('achievements')
 }
 
+const clearError = (id) => {
+  if (depositErrors[id]) depositErrors[id] = ''
+}
+
 const addSaving = (g) => {
   const amount = Number(g.depositInput)
-  if (!amount || amount <= 0) return
-  goalApi.addGoalSaving(g.id, amount)
-  refreshKeys('goals')
+  if (!g.depositAccountId) {
+    depositErrors[g.id] = '请选择扣款账户'
+    return
+  }
+  if (!(amount > 0)) {
+    depositErrors[g.id] = '请输入大于 0 的存入金额'
+    return
+  }
+  const result = goalApi.addGoalSaving(g.id, amount, g.depositAccountId)
+  if (!result.ok) {
+    depositErrors[g.id] = result.message || '存入失败'
+    return
+  }
+  depositErrors[g.id] = ''
+  refreshKeys('goals', 'accounts', 'transactions')
   controllersApi.achievement.updateAchievements()
-  refreshKeys('achievements')
+  refreshKeys('achievements', 'points')
 }
 
 const remove = (g) => {
@@ -219,6 +245,7 @@ const remove = (g) => {
   display: flex;
   gap: 8px;
 }
+.add-save select,
 .add-save input {
   flex: 1;
   padding: 9px 12px;
@@ -227,5 +254,18 @@ const remove = (g) => {
   background: var(--bg-elevated);
   color: var(--text-primary);
   min-width: 0;
+}
+.add-save button {
+  flex-shrink: 0;
+}
+.save-error {
+  margin: -4px 0 0;
+  color: var(--expense);
+  font-size: 12px;
+}
+.save-tip {
+  margin: -4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 </style>
