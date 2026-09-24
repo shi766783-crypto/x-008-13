@@ -36,6 +36,10 @@
         </div>
         <div class="advice done" v-else>🎉 目标已达成！</div>
         <form class="add-save" @submit.prevent="addSaving(g)">
+          <select v-model="g.depositAccountId" class="account-select" required>
+            <option value="" disabled>选择扣款账户</option>
+            <option v-for="a in store.accounts" :key="a.id" :value="a.id">{{ a.name }}（余额 ¥{{ money(a.balance) }}）</option>
+          </select>
           <input v-model.number="g.depositInput" :placeholder="`存入金额，当前 ¥${money(g.savedAmount)}`" type="number" min="0.01" step="0.01" required />
           <button class="btn btn-primary" type="submit">存入</button>
         </form>
@@ -98,6 +102,7 @@ const goals = computed(() =>
       remainingAmount,
       percent,
       depositInput: 0,
+      depositAccountId: store.accounts[0]?.id || '',
       status: percent >= 100 ? 'done' : 'active',
       monthlyAmount: leftDays > 0 ? remainingAmount / Math.max(1, Math.round(leftDays / 30)) : 0,
       weeklyAmount: leftDays > 0 ? remainingAmount / Math.max(1, Math.round(leftDays / 7)) : 0,
@@ -123,8 +128,12 @@ const submit = () => {
 const addSaving = (g) => {
   const amount = Number(g.depositInput)
   if (!amount || amount <= 0) return
-  goalApi.addGoalSaving(g.id, amount)
-  refreshKeys('goals')
+  const result = goalApi.addGoalSaving(g.id, amount, g.depositAccountId)
+  if (!result.ok) {
+    alert(result.reason)
+    return
+  }
+  refreshKeys('goals', 'accounts', 'transactions')
   controllersApi.achievement.updateAchievements()
   refreshKeys('achievements')
 }
@@ -217,7 +226,17 @@ const remove = (g) => {
 }
 .add-save {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.add-save .account-select {
+  flex: 1 1 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  min-width: 0;
 }
 .add-save input {
   flex: 1;
